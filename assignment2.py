@@ -128,17 +128,13 @@ likelihoodplot(click_like,book_like)
 #_inv klopt niet met beschrijving qua waarden
 #datasam['avail_comp'] = datasam[tempfeats2].sum(axis=1,skipna=True) #amount of avail comp, 0 = no data or no avail
 
-#composite of children and adult count
+#Composite of children and adult count
 datasam['srch_person_count'] = (datasam['srch_adults_count']+datasam['srch_children_count'])
-
-#Property location desirability aggregate --> NOG FIXEN
-datasam[features[11:12]] = datasam[features[11:12]]/float(datasam[features[11:12]].max())
-datasam['prop_desir'] = datasam['prop_desir'] = datasam[features[11:13]].sum(axis=1,skipna=True, numeric_only = True) #sums values of score1 and score2 (1-10)
-datasam['prop_desir'] = datasam['prop_desir']*5
-
+#Property location desirability aggregate
+datasam['prop_loc_desir'] = datasam[features[11:13]].mean(axis=1,skipna=True)
+datasam['prop_loc_desir'] = (datasam['prop_loc_desir']/datasam['prop_loc_desir'].max())*10
 #score aggregate: starrating and reviewscore
-datasam[features[8:9]] = datasam[features[8:9]]/float(datasam[features[11:12]].max())
-datasam['prop_score'] = datasam['prop_desir'] = datasam[features[8:10]].sum(axis=1,skipna=True, numeric_only = True) #desirablitity score between 1 and 10
+datasam['prop_score'] = (datasam[features[8:10]].mean(axis=1,skipna=True))*2
 
 #Relevant features for model
 removefeat = features[27:51] #remove competitor data
@@ -157,7 +153,7 @@ removefeat.append('date_time') #month and year added
 #take year out? may not be relevant for test data since it's more recent
 removefeat.append('srch_id') #id
 removefeat.append('site_id') #id
-removefeat.append('gross_booking_usd') #remove gross_booking usd
+removefeat.append('gross_bookings_usd') #remove gross_booking usd
 removefeat.append('position') #training only
 removefeat.append('click_bool') #training only
 removefeat.append('booking_bool') #training only
