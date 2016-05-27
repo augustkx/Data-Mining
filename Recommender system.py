@@ -44,19 +44,54 @@ data["month"] = data["date_time"].dt.month
 
 
 #==========Feature manipulation function [From Juroen]====================================================================
-def new_feat(datasam):
-    #composite of children and adult count
+def createfeat(datasam):
+    #Change date variable to year and month
+    datasam["date_time"] = pd.to_datetime(datasam["date_time"])
+    datasam["year"] = datasam["date_time"].dt.year
+    datasam["month"] = datasam["date_time"].dt.month
+
+    #Property location desirability aggregate
     features = list(datasam.columns.values)
-    datasam['srch_person_count'] = (datasam['srch_adults_count']+datasam['srch_children_count'])
-    
-    #Property location desirability aggregate --> NOG FIXEN
-    datasam[features[11:12]] = datasam[features[11:12]]/float(datasam[features[11:12]].max())
-    datasam['prop_desir'] = datasam['prop_desir'] = datasam[features[11:13]].sum(axis=1,skipna=True, numeric_only = True) #sums values of score1 and score2 (1-10)
-    datasam['prop_desir'] = datasam['prop_desir']*5
+    datasam['prop_loc_desir'] = datasam[features[11:13]].mean(axis=1,skipna=True)
+    datasam['prop_loc_desir'] = (datasam['prop_loc_desir']/datasam['prop_loc_desir'].max())*10
     
     #score aggregate: starrating and reviewscore
     datasam[features[8:9]] = datasam[features[8:9]]/float(datasam[features[11:12]].max())
     datasam['prop_score'] = datasam['prop_desir'] = datasam[features[8:10]].sum(axis=1,skipna=True, numeric_only = True) #desirablitity score between 1 and 10
+    
+    #composite of children and adult count
+    datasam['srch_person_count'] = (datasam['srch_adults_count']+datasam['srch_children_count'])
+
+    #Composite feature: abs price difference w. competitors
+    tempfeats = []
+    tempfeats1 = []
+    tempfeats2 = []
+    for number in range (1,8):
+        tempfeats.append('comp'+str(number)+'_rate')
+        tempfeats1.append('comp'+str(number)+'_inv')
+        tempfeats2.append('comp'+str(number)+'_rate_percent_diff')
+    datasam['comp_price'] = datasam[tempfeats].mean(axis=1,skipna=True) 
+    datasam['comp_perc_diff'] = datasam[tempfeats2].mean(axis=1, skipna=True)
+    datasam['comp_avail'] = datasam[tempfeats1].mean(axis=1,skipna=True) 
+    # not price_diff, still too many missing values when combined and only limited correlation
+    #impute missing data
+    datasam['comp_price'] = datasam.comp_price.fillna(value=-1) #-1 better than median
+    datasam['comp_avail'] = datasam.comp_avail.fillna(value=-1) 
+    datasam['comp_perc_diff'] = datasam.comp_perc_diff.fillna(value=-1) 
+    
+    
+    #Hotelbooking & clicking correlation with prop_loc_desir and prop_score
+    features = list(datasam.columns.values)
+    corrframe = datasam[features]
+    corrframe = (corrframe[corrframe['click_bool'] ==1])
+    corrframe['hotel_clickbool'] = (corrframe['booking_bool']*5)+corrframe['click_bool']
+    spearcor=corrframe.corr(method='spearman')["hotel_clickbool"] 
+    
+    #Impute missing review scores and srch_query_aff score w. median
+    median = datasam.prop_review_score.median(axis=0,skipna=True)
+    datasam['prop_review_score'] = datasam.prop_review_score.fillna(value=median)
+    median = datasam.srch_query_affinity_score.median(axis=0,skipna=True)
+    datasam['srch_query_affinity_score'] = datasam.srch_query_affinity_score.fillna(value=median)
     
     #Relevant features for model
     removefeat = features[27:51] #remove competitor data
@@ -65,25 +100,25 @@ def new_feat(datasam):
     removefeat.append('prop_location_score2') #composite added [0-10]
     removefeat.append('prop_location_score1') #composite added [0-10]
     removefeat.append('orig_destination_distance')
-    removefeat.append('random_bool')
     removefeat.append('srch_query_affinity_score')
-    removefeat.append('srch_children_count') #composite added
-    removefeat.append('srch_adults_count') #composite added
-    removefeat.append('prop_review_score') #composite added [0-10]
-    removefeat.append('prop_starrating') #composite added [0-10]
+    removefeat.append('srch_children_count') #badly correlates with booking/clicking
     removefeat.append('date_time') #month and year added
-    removefeat.append('year') ##take year out:relevant for test data since it's more recent
-    removefeat.append('srch_id') #id
-#    removefeat.append('site_id') #id
-    removefeat.append('gross_booking_usd') #remove gross_booking usd
+    removefeat.append('year') #year doesn't correlate well at all w. booking/clicking
+    removefeat.append('gross_bookings_usd') #remove gross_booking usd
     removefeat.append('position') #training only
     removefeat.append('click_bool') #training only
     removefeat.append('booking_bool') #training only
-    #create a new features with the new features
-    #features = list(datasam.columns.values)
-    newfeat = [feat for feat in features if feat not in removefeat] #take feat out
-    return newfeat
+    newfeat = [feat for feat in features if feat not in removefeat] #create new features 
+    
+    #Divide into training and test data
+    #sampletest = list(set(np.random.choice(len(datasam), int((len(datasam)/2)), replace=False)))
+    #sampletrain = list(range(0,len(datasam)))
+    #sampletrain = list(set(sampletrain)-set(sampletest))
+    #data = datasam
+    #test = datasam.ix[sampletest]
+    #train = datasam.ix[sampletrain]
 
+    return newfeat #test,train
 
 #==============================just for trying something. Useless.==============================
 #print(data.columns)
@@ -205,8 +240,8 @@ def main(data):
     #===========Feature selection================================================================
 #    predictors = [c for c in data.columns if c not in ["srch_id"] and c not in ["date_time"]]
 #    predictors = ['prop_country_id','srch_destination_id','prop_id']#,'srch_adults_count','srch_children_count','srch_room_count'
-    predictors= new_feat(data) # [From Juroen]
-    
+    predictors= createfeat(data) # [From Juroen]
+#    predictors= new_feat(data) # [From Juroen]
     #print(data[predictors])
     data.fillna(-1, inplace=True)
 #    test.fillna(-1, inplace=True)#used when taining the whole data for the last outcome to hand up.
@@ -427,6 +462,46 @@ def position_basis(data):
 
     
     
+
+def new_feat(datasam):
+    #composite of children and adult count
+    features = list(datasam.columns.values)
+    datasam['srch_person_count'] = (datasam['srch_adults_count']+datasam['srch_children_count'])
     
+    #Property location desirability aggregate --> NOG FIXEN
+    datasam[features[11:12]] = datasam[features[11:12]]/float(datasam[features[11:12]].max())
+    datasam['prop_desir'] = datasam['prop_desir'] = datasam[features[11:13]].sum(axis=1,skipna=True, numeric_only = True) #sums values of score1 and score2 (1-10)
+    datasam['prop_desir'] = datasam['prop_desir']*5
+    
+    #score aggregate: starrating and reviewscore
+    datasam[features[8:9]] = datasam[features[8:9]]/float(datasam[features[11:12]].max())
+    datasam['prop_score'] = datasam['prop_desir'] = datasam[features[8:10]].sum(axis=1,skipna=True, numeric_only = True) #desirablitity score between 1 and 10
+    
+    #Relevant features for model
+    removefeat = features[27:51] #remove competitor data
+    removefeat.append('visitor_hist_starrating')
+    removefeat.append('visitor_hist_adr_usd')
+    removefeat.append('prop_location_score2') #composite added [0-10]
+    removefeat.append('prop_location_score1') #composite added [0-10]
+    removefeat.append('orig_destination_distance')
+    removefeat.append('random_bool')
+    removefeat.append('srch_query_affinity_score')
+    removefeat.append('srch_children_count') #composite added
+    removefeat.append('srch_adults_count') #composite added
+    removefeat.append('prop_review_score') #composite added [0-10]
+    removefeat.append('prop_starrating') #composite added [0-10]
+    removefeat.append('date_time') #month and year added
+    removefeat.append('year') ##take year out:relevant for test data since it's more recent
+    removefeat.append('srch_id') #id
+#    removefeat.append('site_id') #id
+    removefeat.append('gross_booking_usd') #remove gross_booking usd
+    removefeat.append('position') #training only
+    removefeat.append('click_bool') #training only
+    removefeat.append('booking_bool') #training only
+    #create a new features with the new features
+    #features = list(datasam.columns.values)
+    newfeat = [feat for feat in features if feat not in removefeat] #take feat out
+    return newfeat
+   
     
     
