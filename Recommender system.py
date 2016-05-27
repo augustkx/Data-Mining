@@ -19,12 +19,13 @@ from sklearn.ensemble import GradientBoostingClassifier
 #print(len(data["prop_id"].unique()))#129113
 ##print(data["prop_id"].value_counts())
 #==========extract samples:have done and only need done once.================================================
-#rows = random.sample(list(data['srch_id'].unique()), 100)#select 100 srch_id randomly
+#rows = random.sample(list(data['srch_id'].unique()), 10)#select 100 srch_id randomly
 #train=data[data.srch_id.isin(rows)]#select the instances, corresponding to the 100 srch_id.
-##np.savetxt("train.csv", train)
-#train.to_csv('train.csv')
+#np.savetxt("train.csv", train)
+#train.to_csv('train2.csv')
 #==================sample data==================================================================================================
 data=pd.read_csv('train.csv')
+#test=pd.read_csv('train2.csv')
 # print(data.describe())
 #print(data.shape)
 #data = data.drop(data.columns[[0]], axis=1)
@@ -145,9 +146,9 @@ def ndcg_calc(train_df, pred_scores):
 
 
 #============Random Forest========================================================================================================
-def random_forest(data,rows_train,rows_test, predictors):
+def random_forest(data,test,rows_train,rows_test, predictors):
     
-    data_test=data[data.srch_id.isin(rows_test)]
+    data_test=test[test.srch_id.isin(rows_test)]
     X_test=data_test[predictors]#select the instances, corresponding to the 100 srch_id.
     #===========================predict the booking_bool:==============================================================
     X_train_book=data[data.srch_id.isin(rows_train)][predictors]#select the instances, corresponding to the 100 srch_id.
@@ -170,13 +171,22 @@ def random_forest(data,rows_train,rows_test, predictors):
 #    data_test['click_pre']=clf2.predict(X_test_click)
 #    data_test['click_pre']=clf.predict(data.loc[rows_test,predictors])[:, 1]
     data_test['click_pre']=clf2.predict(X_test) #Prediction of click
-    print(data_test.head())
+#    print(data_test.head())
      
-     #=======================Combine the booking_bool and click_bool to get the score:====================
+     #=======================Combine the booking_bool and click_bool to rank the instance grouped by srch_id:====================
     data_test['score'] = data_test['click_pre'].map(lambda x: 1 if x ==1 else 0)#if predicted to be clicked,assign 1 to the score.Else,0.
     data_test.loc[(data_test['book_pre'] ==1),'score']=5#if predicted to be clicked,assign 5 to the score.Else,undo.
+#        outcome=data_test['srch_id','prop_id','score']
+#        outcome= outcome.sort_values(by=['srch_id','score'], ascending=[True,False])    
+#    print(data_test.loc[:,['srch_id','click_bool','booking_bool','click_pre','book_pre','score']])
+#    data_test.loc[:,['srch_id','click_bool','booking_bool','click_pre','book_pre','score']].to_csv('check2.csv')
     
-    print(data_test.head())
+    #=======================just for debugging=====================================
+    data_test['difference_predict_click']=data_test.click_bool-data_test.click_pre
+    data_test['difference_predict_book']=data_test.booking_bool-data_test.book_pre
+    print(np.count_nonzero(data_test['difference_predict_click']),np.count_nonzero(data_test['click_bool']),np.count_nonzero(data_test['click_pre']))
+    print(np.count_nonzero(data_test['difference_predict_book']),np.count_nonzero(data_test['booking_bool']),np.count_nonzero(data_test['book_pre']))    
+    
     
     #=====================nDCG=============================================================================
     if hasattr(data_test, 'booking_bool'):#calculate the nDCG to compare with various models.
@@ -188,13 +198,38 @@ def random_forest(data,rows_train,rows_test, predictors):
         outcome= outcome.sort_values(by=['srch_id','score'], ascending=[True,False])
         return outcome['srch_id','prop_id']
 #=======================================================================================================================
-
+def main(data):
+    """
+    run and compare models of random forest, radientBoosting, and SVM.
+    """
+    #===========Feature selection================================================================
+#    predictors = [c for c in data.columns if c not in ["srch_id"] and c not in ["date_time"]]
+#    predictors = ['prop_country_id','srch_destination_id','prop_id']#,'srch_adults_count','srch_children_count','srch_room_count'
+    predictors= new_feat(data) # [From Juroen]
+    
+    #print(data[predictors])
+    data.fillna(-1, inplace=True)
+#    test.fillna(-1, inplace=True)#used when taining the whole data for the last outcome to hand up.
+    rows_train = random.sample(list(data['srch_id'].unique()), 50)#select 50 srch_id randomly,used when modeling selecting.
+#    rows_train = list(data['srch_id'].unique())#used when taining the whole data for the last outcome to hand up.
+    rows_test=list(i for i in list(data['srch_id'].unique()) if i not in rows_train)
+#    rows_test= list(test['srch_id'].unique())#used when taining the whole data for the last outcome to hand up.
+#    print(rows_train)
+#    print(rows_test)
+    pd.options.mode.chained_assignment = None #dangerous code, to be refined in time permitted, but I think I can use it here.
+    ndcg_randomforest=random_forest(data,data,rows_train,rows_test, predictors)
+    ndcg_GradientBoosting=GradientBoosting(data,data,rows_train,rows_test, predictors)
+    ndcg_SVM = SVM(data,data,rows_train,rows_test, predictors)
+    print('ndcg_randomforest:',ndcg_randomforest,';   ndcg_GradientBoosting:',ndcg_GradientBoosting,';   ndcg_SVM:', ndcg_SVM)
+#    print('ndcg_randomforest:',ndcg_randomforest)
+    
+main(data)
 
 
 #===========GradientBoostingClassifier=========================================================================================
-def GradientBoosting(data,rows_train,rows_test, predictors):
+def GradientBoosting(data,test,rows_train,rows_test, predictors):
 
-    data_test=data[data.srch_id.isin(rows_test)]
+    data_test=test[test.srch_id.isin(rows_test)]
     X_test=data_test[predictors]#select the instances, corresponding to the 100 srch_id.
     #===========================predict the booking_bool:==============================================================
     X_train_book=data[data.srch_id.isin(rows_train)][predictors]#select the instances, corresponding to the 100 srch_id.
@@ -238,8 +273,8 @@ def GradientBoosting(data,rows_train,rows_test, predictors):
 
 
 #===========SVM================================================================================================================
-def SVM(data,rows_train,rows_test, predictors):
-    data_test=data[data.srch_id.isin(rows_test)]
+def SVM(data,test,rows_train,rows_test, predictors):
+    data_test=test[test.srch_id.isin(rows_test)]
     X_test=data_test[predictors]#select the instances, corresponding to the 100 srch_id.
     #===========================predict the booking_bool:==============================================================
     X_train_book=data[data.srch_id.isin(rows_train)][predictors]#select the instances, corresponding to the 100 srch_id.
@@ -283,31 +318,7 @@ def SVM(data,rows_train,rows_test, predictors):
 
 
 
-def main(data):
-    """
-    run and compare models of random forest, radientBoosting, and SVM.
-    """
-    #===========Feature selection================================================================
-    predictors = [c for c in data.columns if c not in ["srch_id"] and c not in ["date_time"]]
-#    predictors = ['prop_country_id','srch_destination_id','prop_id']#,'srch_adults_count','srch_children_count','srch_room_count'
-#    predictors= new_feat(data) # [From Juroen]
-    
-    #print(data[predictors])
-    data.fillna(-1, inplace=True)
-    rows_train = random.sample(list(data['srch_id'].unique()), 50)#select 50 srch_id randomly,used when modeling selecting.
-#    rows_train = list(data['srch_id'].unique())#used when taining the whole data for the last outcome to hand up.
-    rows_test=list(i for i in list(data['srch_id'].unique()) if i not in rows_train)
-#    rows_test= list(test['srch_id'].unique())#used when taining the whole data for the last outcome to hand up.
-#    print(rows_train)
-#    print(rows_test)
-    pd.options.mode.chained_assignment = None #dangerous code, to be refined in time permitted, but I think I can use it here.
-    ndcg_randomforest=random_forest(data,rows_train,rows_test, predictors)
-    ndcg_GradientBoosting=GradientBoosting(data,rows_train,rows_test, predictors)
-    ndcg_SVM = SVM(data,rows_train,rows_test, predictors)
-    print('ndcg_randomforest:',ndcg_randomforest,';   ndcg_GradientBoosting:',ndcg_GradientBoosting,';   ndcg_SVM:', ndcg_SVM)
-    print('ndcg_randomforest:',ndcg_randomforest)
-    
-main(data)
+
 
 
 
@@ -414,8 +425,6 @@ def position_basis(data):
 #position_basis(data)
     
 
-    
-    
     
     
     
