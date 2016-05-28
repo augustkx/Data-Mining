@@ -11,7 +11,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 
 
 #data=pd.read_csv('training_set_VU_DM_2014.csv')
-##test=pd.read_csv('test_set_VU_DM_2014.csv')
+#test=pd.read_csv('test_set_VU_DM_2014.csv')
 #print(data.shape)#number of rows&columns:(4958347, 54)
 #print(len(data['srch_id'].unique()))#the number of searches:199795
 ##print(data['srch_id'].unique().max())
@@ -44,6 +44,48 @@ data["month"] = data["date_time"].dt.month
 
 
 #==========Feature manipulation function [From Juroen]====================================================================
+def new_feat(datasam):
+    #composite of children and adult count
+    features = list(datasam.columns.values)
+    datasam['srch_person_count'] = (datasam['srch_adults_count']+datasam['srch_children_count'])
+    
+    #Property location desirability aggregate --> NOG FIXEN
+    datasam[features[11:12]] = datasam[features[11:12]]/float(datasam[features[11:12]].max())
+    datasam['prop_desir'] = datasam['prop_desir'] = datasam[features[11:13]].sum(axis=1,skipna=True, numeric_only = True) #sums values of score1 and score2 (1-10)
+    datasam['prop_desir'] = datasam['prop_desir']*5
+    
+    #score aggregate: starrating and reviewscore
+    datasam[features[8:9]] = datasam[features[8:9]]/float(datasam[features[11:12]].max())
+    datasam['prop_score'] = datasam['prop_desir'] = datasam[features[8:10]].sum(axis=1,skipna=True, numeric_only = True) #desirablitity score between 1 and 10
+    
+    #Relevant features for model
+    removefeat = features[27:51] #remove competitor data
+    removefeat.append('visitor_hist_starrating')
+    removefeat.append('visitor_hist_adr_usd')
+    removefeat.append('prop_location_score2') #composite added [0-10]
+    removefeat.append('prop_location_score1') #composite added [0-10]
+    removefeat.append('orig_destination_distance')
+    removefeat.append('random_bool')
+    removefeat.append('srch_query_affinity_score')
+    removefeat.append('srch_children_count') #composite added
+    removefeat.append('srch_adults_count') #composite added
+    removefeat.append('prop_review_score') #composite added [0-10]
+    removefeat.append('prop_starrating') #composite added [0-10]
+    removefeat.append('date_time') #month and year added
+    removefeat.append('year') ##take year out:relevant for test data since it's more recent
+    removefeat.append('srch_id') #id
+#    removefeat.append('site_id') #id
+    removefeat.append('gross_booking_usd') #remove gross_booking usd
+    removefeat.append('position') #training only
+    removefeat.append('click_bool') #training only
+    removefeat.append('booking_bool') #training only
+    #create a new features with the new features
+    #features = list(datasam.columns.values)
+    newfeat = [feat for feat in features if feat not in removefeat] #take feat out
+    
+    return newfeat,  datasam
+   
+    
 def createfeat(datasam):
     #Change date variable to year and month
     datasam["date_time"] = pd.to_datetime(datasam["date_time"])
@@ -118,7 +160,7 @@ def createfeat(datasam):
     #test = datasam.ix[sampletest]
     #train = datasam.ix[sampletrain]
 
-    return newfeat #test,train
+    return newfeat, datasam #test,train
 
 #==============================just for trying something. Useless.==============================
 #print(data.columns)
@@ -179,7 +221,6 @@ def ndcg_calc(train_df, pred_scores):
 #==============================================================================
 
 
-
 #============Random Forest========================================================================================================
 def random_forest(data,test,rows_train,rows_test, predictors):
     
@@ -233,16 +274,17 @@ def random_forest(data,test,rows_train,rows_test, predictors):
         outcome= outcome.sort_values(by=['srch_id','score'], ascending=[True,False])
         return outcome['srch_id','prop_id']
 #=======================================================================================================================
-def main(data):
+def main(data,feat,plot_parameter):
     """
     run and compare models of random forest, radientBoosting, and SVM.
     """
     #===========Feature selection================================================================
 #    predictors = [c for c in data.columns if c not in ["srch_id"] and c not in ["date_time"]]
 #    predictors = ['prop_country_id','srch_destination_id','prop_id']#,'srch_adults_count','srch_children_count','srch_room_count'
-    predictors= createfeat(data) # [From Juroen]
+#    predictors= createfeat(data) # [From Juroen]
 #    predictors= new_feat(data) # [From Juroen]
-    #print(data[predictors])
+    predictors=feat
+#    print(data[predictors].columns)
     data.fillna(-1, inplace=True)
 #    test.fillna(-1, inplace=True)#used when taining the whole data for the last outcome to hand up.
     rows_train = random.sample(list(data['srch_id'].unique()), 50)#select 50 srch_id randomly,used when modeling selecting.
@@ -254,12 +296,22 @@ def main(data):
     pd.options.mode.chained_assignment = None #dangerous code, to be refined in time permitted, but I think I can use it here.
     ndcg_randomforest=random_forest(data,data,rows_train,rows_test, predictors)
     ndcg_GradientBoosting=GradientBoosting(data,data,rows_train,rows_test, predictors)
-    ndcg_SVM = SVM(data,data,rows_train,rows_test, predictors)
-    print('ndcg_randomforest:',ndcg_randomforest,';   ndcg_GradientBoosting:',ndcg_GradientBoosting,';   ndcg_SVM:', ndcg_SVM)
-#    print('ndcg_randomforest:',ndcg_randomforest)
-    
-main(data)
+#    ndcg_GradientBoosting=GradientBoosting(data,test,rows_train,rows_test, predictors)#used when taining the whole data for the last outcome to hand up.
+    ndcg_SVM = SVM(data,data,rows_train,rows_test, predictors,'rbf')
 
+    #===============================PLOT=====================================================
+        
+#    plt.plot([ndcg_randomforest,ndcg_GradientBoosting,ndcg_SVM],'o-',label=plot_parameter)
+#    plt.xlabel('Models')
+#    plt.ylabel('nDCG')
+#    plt.xticks(range(3),['Randomforest','GradientBoosting','SVM'],size='small')
+    print('ndcg_randomforest:',ndcg_randomforest,';   ndcg_GradientBoosting:',ndcg_GradientBoosting,';   ndcg_SVM:', ndcg_SVM)
+#    print(' ndcg_GradientBoosting:', ndcg_GradientBoosting)
+#    ndcg_GradientBoosting.to_csv('final.csv')
+
+[feat, data] = createfeat(data)#second set
+#[feat, data] = new_feat(data)
+main(data,feat,'')
 
 #===========GradientBoostingClassifier=========================================================================================
 def GradientBoosting(data,test,rows_train,rows_test, predictors):
@@ -307,15 +359,17 @@ def GradientBoosting(data,test,rows_train,rows_test, predictors):
 #=======================================================================================================================
 
 
+
+
 #===========SVM================================================================================================================
-def SVM(data,test,rows_train,rows_test, predictors):
+def SVM(data,test,rows_train,rows_test, predictors,kernel):
     data_test=test[test.srch_id.isin(rows_test)]
     X_test=data_test[predictors]#select the instances, corresponding to the 100 srch_id.
     #===========================predict the booking_bool:==============================================================
     X_train_book=data[data.srch_id.isin(rows_train)][predictors]#select the instances, corresponding to the 100 srch_id.
     Y_train_book=data[data.srch_id.isin(rows_train)]['booking_bool']
 #    Y_test_book=data[data.srch_id.isin(rows_test)]['booking_bool']    
-    clf = svm.SVC()
+    clf = svm.SVC(kernel=kernel)
     clf.fit(X_train_book, Y_train_book)
     #clf.score(X_test, y_test)     #no use, we will use the nDCG instead.
     print('SVM_forest_check1:',1 in clf.predict(X_test),  len(clf.predict(X_test)), len(data_test)    )
@@ -353,6 +407,59 @@ def SVM(data,test,rows_train,rows_test, predictors):
 
 
 
+def  main_plot1():#compare differnt feture selections.
+    plot_parameter='feature set 1'
+    feat=new_feat(data)
+    main(data,feat,plot_parameter)
+    feat=createfeat(data)
+    plot_parameter='feature set 2'   
+    main(data,feat,plot_parameter)
+    plt.show()
+    plt.legend()
+    plt.savefig("Models_fea_se1_se1.png")
+#main_plot1()
+
+
+def main_plot2(data,feat):
+    """
+    run and compare models of random forest, radientBoosting, and SVM.
+    """
+    #===========Feature selection================================================================
+#    predictors = [c for c in data.columns if c not in ["srch_id"] and c not in ["date_time"]]
+#    predictors = ['prop_country_id','srch_destination_id','prop_id']#,'srch_adults_count','srch_children_count','srch_room_count'
+#    predictors= createfeat(data) # [From Juroen]
+#    predictors= new_feat(data) # [From Juroen]
+    predictors=feat
+    #print(data[predictors])
+    data.fillna(-1, inplace=True)
+#    test.fillna(-1, inplace=True)#used when taining the whole data for the last outcome to hand up.
+    rows_train = random.sample(list(data['srch_id'].unique()), 50)#select 50 srch_id randomly,used when modeling selecting.
+#    rows_train = list(data['srch_id'].unique())#used when taining the whole data for the last outcome to hand up.
+    rows_test=list(i for i in list(data['srch_id'].unique()) if i not in rows_train)
+#    rows_test= list(test['srch_id'].unique())#used when taining the whole data for the last outcome to hand up.
+
+    pd.options.mode.chained_assignment = None #dangerous code, to be refined in time permitted, but I think I can use it here.
+    ndcg_SVM_linear = SVM(data,data,rows_train,rows_test, predictors,'linear')
+    ndcg_SVM_rbf = SVM(data,data,rows_train,rows_test, predictors,'rbf')
+#    ndcg_SVM_poly = SVM(data,data,rows_train,rows_test, predictors,'poly')
+    ndcg_SVM_sigmoid = SVM(data,data,rows_train,rows_test, predictors,'sigmoid')
+#    ndcg_SVM_precomputed = SVM(data,data,rows_train,rows_test, predictors,'precomputed')
+    
+    
+    #===============================PLOT=====================================================
+        
+    plt.plot([ ndcg_SVM_linear,ndcg_SVM_rbf, ndcg_SVM_sigmoid],'o-')
+    plt.xlabel('Kernel')
+    plt.ylabel('nDCG')
+    plt.xticks(range(3),['linear','rbf','sigmoid'],size='small')
+    plt.show()
+#    plt.legend()
+    plt.savefig("Models_SVM.png")
+#    print('ndcg_randomforest:',ndcg_randomforest,';   ndcg_GradientBoosting:',ndcg_GradientBoosting,';   ndcg_SVM:', ndcg_SVM)
+    print('ndcg_SVM_linear:',ndcg_SVM_linear)
+
+#feat=new_feat(data)
+#main_plot2(data,feat)
 
 
 
@@ -463,45 +570,5 @@ def position_basis(data):
     
     
 
-def new_feat(datasam):
-    #composite of children and adult count
-    features = list(datasam.columns.values)
-    datasam['srch_person_count'] = (datasam['srch_adults_count']+datasam['srch_children_count'])
-    
-    #Property location desirability aggregate --> NOG FIXEN
-    datasam[features[11:12]] = datasam[features[11:12]]/float(datasam[features[11:12]].max())
-    datasam['prop_desir'] = datasam['prop_desir'] = datasam[features[11:13]].sum(axis=1,skipna=True, numeric_only = True) #sums values of score1 and score2 (1-10)
-    datasam['prop_desir'] = datasam['prop_desir']*5
-    
-    #score aggregate: starrating and reviewscore
-    datasam[features[8:9]] = datasam[features[8:9]]/float(datasam[features[11:12]].max())
-    datasam['prop_score'] = datasam['prop_desir'] = datasam[features[8:10]].sum(axis=1,skipna=True, numeric_only = True) #desirablitity score between 1 and 10
-    
-    #Relevant features for model
-    removefeat = features[27:51] #remove competitor data
-    removefeat.append('visitor_hist_starrating')
-    removefeat.append('visitor_hist_adr_usd')
-    removefeat.append('prop_location_score2') #composite added [0-10]
-    removefeat.append('prop_location_score1') #composite added [0-10]
-    removefeat.append('orig_destination_distance')
-    removefeat.append('random_bool')
-    removefeat.append('srch_query_affinity_score')
-    removefeat.append('srch_children_count') #composite added
-    removefeat.append('srch_adults_count') #composite added
-    removefeat.append('prop_review_score') #composite added [0-10]
-    removefeat.append('prop_starrating') #composite added [0-10]
-    removefeat.append('date_time') #month and year added
-    removefeat.append('year') ##take year out:relevant for test data since it's more recent
-    removefeat.append('srch_id') #id
-#    removefeat.append('site_id') #id
-    removefeat.append('gross_booking_usd') #remove gross_booking usd
-    removefeat.append('position') #training only
-    removefeat.append('click_bool') #training only
-    removefeat.append('booking_bool') #training only
-    #create a new features with the new features
-    #features = list(datasam.columns.values)
-    newfeat = [feat for feat in features if feat not in removefeat] #take feat out
-    return newfeat
-   
-    
+
     
