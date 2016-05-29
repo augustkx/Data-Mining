@@ -36,7 +36,6 @@ def createfeat(datasam):
     removefeat = features[27:51] #remove competitor data
     removefeat.append('visitor_hist_starrating')
     removefeat.append('visitor_hist_adr_usd')
-    removefeat.append('prop_starrating')
     removefeat.append('prop_location_score2') #composite added [0-10]
     removefeat.append('prop_location_score1') #composite added [0-10]
     removefeat.append('orig_destination_distance')
